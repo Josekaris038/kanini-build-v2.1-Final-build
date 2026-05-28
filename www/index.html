@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+
+  <title>Kanini Shop POS</title>
+
+  <!-- ===============================
+       STYLES (UNCHANGED - SAFE)
+  ================================ -->
+  <link rel="stylesheet" href="css/main.css" />
+  <link rel="stylesheet" href="css/modules.css" />
+</head>
+
+<body>
+
+<div id="app">
+
+  <!-- ===============================
+       HEADER
+  ================================ -->
+  <header class="header">
+
+    <div class="header-left">
+      <button id="menuToggle" aria-label="Toggle Menu">☰</button>
+
+      <div class="logo">
+        🛒 Kanini Shop
+      </div>
+    </div>
+
+    <div class="search-box">
+      <input type="text" placeholder="Search product..." />
+      <div class="search-results"></div>
+    </div>
+
+  </header>
+
+  <!-- ===============================
+       SIDEBAR NAVIGATION (STABLE ROUTING LAYER)
+  ================================ -->
+  <aside class="sidebar closed" id="sidebar">
+
+    <button class="nav-btn active" data-route="dashboard">Dashboard</button>
+    <button class="nav-btn" data-route="sales">Make Sale</button>
+    <button class="nav-btn" data-route="cart">Cart</button>
+    <button class="nav-btn" data-route="inventory">Inventory</button>
+    <button class="nav-btn" data-route="records">Records</button>
+    <button class="nav-btn" data-route="analytics">Analytics</button>
+    <button class="nav-btn" data-route="notifications">Notifications</button>
+
+  </aside>
+
+  <!-- ===============================
+       MODULE RENDER TARGET
+  ================================ -->
+  <section id="moduleContainer" class="content"></section>
+
+</div>
+
+<!-- =========================================================
+     KANINI KERNEL BOOT SEQUENCE (HARD GUARDED ORDER v3)
+========================================================= -->
+
+<script>
+  // ===============================
+  // SAFE GLOBAL BOOT GATE
+  // Prevents EventKernel crashes during early emit
+  // ===============================
+  window.__KANINI_BOOT_STAGE__ = "loading";
+</script>
+
+<!-- 1. STORAGE -->
+<script src="js/StorageKernel.js"></script>
+
+<!-- 2. EVENT CONTRACT MAP -->
+<script src="js/EventContractMap.js"></script>
+
+<!-- 3. EVENT KERNEL -->
+<script src="js/EventKernel.js"></script>
+
+<!-- 4. STATE KERNEL -->
+<script src="js/StateKernel.js"></script>
+
+<!-- 4.2. RECORDS KERNEL -->
+<script src="js/RecordsKernel.js"></script>
+
+<!-- 5. DATA SERVICE -->
+<script src="js/dataService.js"></script>
+
+<!-- 6. CART STORE -->
+<script src="js/cartStore.js"></script>
+
+<!-- 7. TRANSACTION ENGINE -->
+<script src="js/TransactionKernel.js"></script>
+
+<!-- 8. FINANCE + AI -->
+<script src="js/FinanceService.js"></script>
+<script src="js/InventoryAIService.js"></script>
+<script src="js/BusinessIntelligenceKenerl.js"></script>
+<!-- 9. MODULE LOADER -->
+<script src="js/moduleLoader.js"></script>
+
+<!-- 10. ROUTER -->
+<script src="js/router.js"></script>
+
+<!-- 11. MODULES -->
+<script src="js/modules/moduleDashboard.js"></script>
+<script src="js/modules/moduleInventory.js"></script>
+<script src="js/modules/moduleMakeSale.js"></script>
+<script src="js/modules/moduleCart.js"></script>
+<script src="js/modules/moduleRecords.js"></script>
+<script src="js/modules/moduleAnalytics.js"></script>
+<script src="js/modules/moduleNotifications.js"></script>
+
+<!-- 12. UTILITIES -->
+<script src="js/quickSearch.js"></script>
+
+<!-- 13. APP BOOTSTRAP -->
+<script src="js/app.js"></script>
+
+<script>
+  // ===============================
+  // FINAL BOOT COMPLETION SIGNAL
+  // Fixes: route:* unknown event crash
+  // ===============================
+  window.addEventListener("load", () => {
+
+    if (window.EventKernel?.setBootReady) {
+      window.EventKernel.setBootReady();
+    }
+
+    window.__KANINI_BOOT_STAGE__ = "ready";
+    console.log("[Kanini] System fully booted");
+  });
+</script>
+
+</body>
+</html>
