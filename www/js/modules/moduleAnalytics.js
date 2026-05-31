@@ -1,4 +1,4 @@
-// ===== moduleAnalytics.js (KANINI EXECUTIVE INTELLIGENCE DASHBOARD v1) =====
+// ===== moduleAnalytics.js (KANINI EXECUTIVE INTELLIGENCE DASHBOARD v3 — CLASS EDITION) =====
 
 ModuleLoader.register("analytics", function () {
 
@@ -14,33 +14,24 @@ ModuleLoader.register("analytics", function () {
   if (!container) return;
 
   // =========================================
-  // MONEY FORMAT
+  // FORMATTERS
   // =========================================
   function money(value) {
+    return Number(value || 0).toLocaleString();
+  }
 
-    return Number(value || 0)
-      .toLocaleString();
+  function percent(value) {
+    return `${Number(value || 0).toFixed(2)}%`;
   }
 
   // =========================================
-  // CARD
+  // UI CARD
   // =========================================
-  function metricCard(
-    label,
-    value
-  ) {
-
+  function metricCard(label, value) {
     return `
       <div class="analytics-card">
-
-        <div class="analytics-label">
-          ${label}
-        </div>
-
-        <div class="analytics-value">
-          ${value}
-        </div>
-
+        <div class="analytics-label">${label}</div>
+        <div class="analytics-value">${value}</div>
       </div>
     `;
   }
@@ -48,14 +39,8 @@ ModuleLoader.register("analytics", function () {
   // =========================================
   // LIST SECTION
   // =========================================
-  function listSection(
-    title,
-    items,
-    formatter
-  ) {
-
+  function listSection(title, items, formatter) {
     return `
-
       <div class="analytics-panel">
 
         <div class="panel-title">
@@ -66,25 +51,105 @@ ModuleLoader.register("analytics", function () {
 
           ${
             items.length
-
-            ? items.map(formatter).join("")
-
-            : `
-              <div class="analytics-empty">
-                No data available
-              </div>
-            `
+              ? items.map(formatter).join("")
+              : `<div class="analytics-empty">No records available at this time</div>`
           }
 
         </div>
 
       </div>
-
     `;
   }
 
   // =========================================
-  // RENDER
+  // 🧠 ELEGANT NARRATIVE ENGINE
+  // =========================================
+  function buildNarrative(summary, pulse, comparison, insights) {
+
+    const lines = [];
+
+    const revenueGrowth = comparison?.growth?.revenue;
+    const profitGrowth = comparison?.growth?.profit;
+
+    // -----------------------------------------
+    // Revenue narrative (refined tone)
+    // -----------------------------------------
+    if (typeof revenueGrowth === "number") {
+
+      if (revenueGrowth > 0) {
+        lines.push(
+          `Revenue has expanded by ${percent(revenueGrowth)} compared to yesterday, indicating healthy demand momentum across the business.`
+        );
+      } else if (revenueGrowth < 0) {
+        lines.push(
+          `Revenue contracted by ${percent(Math.abs(revenueGrowth))} relative to yesterday, suggesting a temporary softening in market activity.`
+        );
+      } else {
+        lines.push(
+          `Revenue has remained steady compared to yesterday, reflecting stable market conditions.`
+        );
+      }
+    }
+
+    // -----------------------------------------
+    // Profit narrative (refined tone)
+    // -----------------------------------------
+    if (typeof profitGrowth === "number") {
+
+      if (profitGrowth > 0) {
+        lines.push(
+          `Profitability strengthened by ${percent(profitGrowth)}, reflecting improved operational efficiency and margin control.`
+        );
+      } else if (profitGrowth < 0) {
+        lines.push(
+          `Profitability declined by ${percent(Math.abs(profitGrowth))}, indicating margin pressure within current sales composition.`
+        );
+      } else {
+        lines.push(
+          `Profit levels remain consistent with the previous day, indicating balanced cost-to-revenue performance.`
+        );
+      }
+    }
+
+    // -----------------------------------------
+    // Business pulse narrative
+    // -----------------------------------------
+    if (pulse) {
+
+      lines.push(
+        `The business is currently positioned in a "${pulse.status}" state with an operational score of ${pulse.score}.`
+      );
+
+      if (pulse.alerts > 0) {
+        lines.push(
+          `There are ${pulse.alerts} active operational signals requiring attention within inventory and sales flow.`
+        );
+      } else {
+        lines.push(
+          `Operational conditions remain stable with no immediate risk indicators detected.`
+        );
+      }
+    }
+
+    // -----------------------------------------
+    // Strategic insight elevation
+    // -----------------------------------------
+    if (insights?.length) {
+
+      const top = insights[0];
+
+      if (top?.message) {
+        lines.push(
+          `Key observation: ${top.message}`
+        );
+      }
+    }
+
+    return lines;
+  }
+
+  // =========================================
+  // MAIN RENDER
   // =========================================
   function render() {
 
@@ -94,6 +159,9 @@ ModuleLoader.register("analytics", function () {
     const pulse =
       BIK.getBusinessPulse();
 
+    const comparison =
+      BIK.getDailyComparison();
+
     const fastMovers =
       BIK.getFastMovers(5);
 
@@ -101,18 +169,19 @@ ModuleLoader.register("analytics", function () {
       BIK.getTopProfitProducts(5);
 
     const deadStock =
-      BIK.getDeadStock(30)
-         .slice(0, 5);
+      BIK.getDeadStock(30).slice(0, 5);
 
     const reorder =
-      BIK.getReorderRecommendations()
-         .slice(0, 5);
+      BIK.getReorderRecommendations().slice(0, 5);
 
     const alerts =
       BIK.getOperationalAlerts();
 
     const insights =
       BIK.generateInsights();
+
+    const narrative =
+      buildNarrative(summary, pulse, comparison, insights);
 
     container.innerHTML = `
 
@@ -135,30 +204,32 @@ ModuleLoader.register("analytics", function () {
         </div>
 
         <!-- ================================= -->
-        <!-- EXECUTIVE METRICS -->
+        <!-- CORE METRICS -->
         <!-- ================================= -->
 
         <div class="analytics-grid">
 
-          ${metricCard(
-            "Revenue",
-            money(summary.revenue)
-          )}
+          ${metricCard("Revenue", money(summary.revenue))}
+          ${metricCard("Profit", money(summary.profit))}
+          ${metricCard("Inventory Value", money(summary.inventoryValue))}
+          ${metricCard("Potential Profit", money(summary.potentialProfit))}
 
-          ${metricCard(
-            "Profit",
-            money(summary.profit)
-          )}
+        </div>
 
-          ${metricCard(
-            "Inventory Value",
-            money(summary.inventoryValue)
-          )}
+        <!-- ================================= -->
+        <!-- DAILY PERFORMANCE -->
+        <!-- ================================= -->
 
-          ${metricCard(
-            "Potential Profit",
-            money(summary.potentialProfit)
-          )}
+        <div class="analytics-section-title">
+          Daily Performance Overview
+        </div>
+
+        <div class="analytics-grid">
+
+          ${metricCard("Today’s Revenue", money(comparison.today.revenue))}
+          ${metricCard("Yesterday’s Revenue", money(comparison.yesterday.revenue))}
+          ${metricCard("Revenue Shift", percent(comparison.growth.revenue))}
+          ${metricCard("Profit Shift", percent(comparison.growth.profit))}
 
         </div>
 
@@ -177,19 +248,34 @@ ModuleLoader.register("analytics", function () {
           </div>
 
           <div class="pulse-meta">
+            Health: ${pulse.health} |
+            Momentum: ${pulse.momentum} |
+            Active Signals: ${pulse.alerts}
+          </div>
 
-            Health:
-            ${pulse.health}
+        </div>
 
-            |
+        <!-- ================================= -->
+        <!-- STRATEGIC NARRATIVE LAYER -->
+        <!-- ================================= -->
 
-            Momentum:
-            ${pulse.momentum}
+        <div class="analytics-section-title">
+          Executive Narrative Briefing
+        </div>
 
-            |
+        <div class="analytics-panel">
 
-            Alerts:
-            ${pulse.alerts}
+          <div class="panel-body">
+
+            ${
+              narrative.length
+                ? narrative.map(line => `
+                    <div class="insight-item">
+                      ${line}
+                    </div>
+                  `).join("")
+                : `<div class="analytics-empty">No strategic narrative available at this time</div>`
+            }
 
           </div>
 
@@ -205,49 +291,19 @@ ModuleLoader.register("analytics", function () {
 
         <div class="analytics-panels">
 
-          ${listSection(
+          ${listSection("Fast Moving Products", fastMovers, item => `
+            <div class="analytics-row">
+              <span>${item.name}</span>
+              <span>${item.quantitySold}</span>
+            </div>
+          `)}
 
-            "Fast Movers",
-
-            fastMovers,
-
-            item => `
-
-              <div class="analytics-row">
-
-                <span>
-                  ${item.name}
-                </span>
-
-                <span>
-                  ${item.quantitySold}
-                </span>
-
-              </div>
-            `
-          )}
-
-          ${listSection(
-
-            "Top Profit",
-
-            topProfit,
-
-            item => `
-
-              <div class="analytics-row">
-
-                <span>
-                  ${item.name}
-                </span>
-
-                <span>
-                  ${money(item.profit)}
-                </span>
-
-              </div>
-            `
-          )}
+          ${listSection("Top Profit Contributors", topProfit, item => `
+            <div class="analytics-row">
+              <span>${item.name}</span>
+              <span>${money(item.profit)}</span>
+            </div>
+          `)}
 
         </div>
 
@@ -256,65 +312,33 @@ ModuleLoader.register("analytics", function () {
         <!-- ================================= -->
 
         <div class="analytics-section-title">
-          Risk Intelligence
+          Operational Risk Profile
         </div>
 
         <div class="analytics-panels">
 
-          ${listSection(
+          ${listSection("Inactive Inventory", deadStock, item => `
+            <div class="analytics-row">
+              <span>${item.name}</span>
+              <span>Stock: ${item.stock}</span>
+            </div>
+          `)}
 
-            "Dead Stock",
-
-            deadStock,
-
-            item => `
-
-              <div class="analytics-row">
-
-                <span>
-                  ${item.name}
-                </span>
-
-                <span>
-                  Stock:
-                  ${item.stock}
-                </span>
-
-              </div>
-            `
-          )}
-
-          ${listSection(
-
-            "Reorder Risk",
-
-            reorder,
-
-            item => `
-
-              <div class="analytics-row">
-
-                <span>
-                  ${item.name}
-                </span>
-
-                <span>
-                  ${item.daysRemaining}
-                  days
-                </span>
-
-              </div>
-            `
-          )}
+          ${listSection("Reorder Horizon", reorder, item => `
+            <div class="analytics-row">
+              <span>${item.name}</span>
+              <span>${item.daysRemaining} days</span>
+            </div>
+          `)}
 
         </div>
 
         <!-- ================================= -->
-        <!-- ALERTS -->
+        <!-- OPERATIONAL SIGNALS -->
         <!-- ================================= -->
 
         <div class="analytics-section-title">
-          Operational Alerts
+          Operational Signals
         </div>
 
         <div class="analytics-panel">
@@ -323,24 +347,12 @@ ModuleLoader.register("analytics", function () {
 
             ${
               alerts.length
-
-              ? alerts.map(alert => `
-
-                  <div class="alert-item">
-
-                    ${alert.message}
-
-                  </div>
-
-                `).join("")
-
-              : `
-
-                  <div class="analytics-empty">
-                    No active alerts
-                  </div>
-
-                `
+                ? alerts.map(alert => `
+                    <div class="alert-item">
+                      ${alert.message}
+                    </div>
+                  `).join("")
+                : `<div class="analytics-empty">No operational signals detected</div>`
             }
 
           </div>
@@ -348,11 +360,11 @@ ModuleLoader.register("analytics", function () {
         </div>
 
         <!-- ================================= -->
-        <!-- INSIGHTS -->
+        <!-- STRATEGIC INSIGHTS -->
         <!-- ================================= -->
 
         <div class="analytics-section-title">
-          Business Insights
+          Strategic Insights
         </div>
 
         <div class="analytics-panel">
@@ -361,30 +373,13 @@ ModuleLoader.register("analytics", function () {
 
             ${
               insights.length
-
-              ? insights.map(insight => `
-
-                  <div class="insight-item">
-
-                    <div class="insight-title">
-                      ${insight.title}
+                ? insights.map(insight => `
+                    <div class="insight-item">
+                      <div class="insight-title">${insight.title}</div>
+                      <div class="insight-message">${insight.message}</div>
                     </div>
-
-                    <div class="insight-message">
-                      ${insight.message}
-                    </div>
-
-                  </div>
-
-                `).join("")
-
-              : `
-
-                  <div class="analytics-empty">
-                    No insights available
-                  </div>
-
-                `
+                  `).join("")
+                : `<div class="analytics-empty">No strategic insights available</div>`
             }
 
           </div>
@@ -392,7 +387,6 @@ ModuleLoader.register("analytics", function () {
         </div>
 
       </div>
-
     `;
   }
 
@@ -403,17 +397,8 @@ ModuleLoader.register("analytics", function () {
 
     render();
 
-    Bus.on(
-      "sales:updated",
-      render,
-      "analytics"
-    );
-
-    Bus.on(
-      "inventory:updated",
-      render,
-      "analytics"
-    );
+    Bus.on("sales:updated", render, "analytics");
+    Bus.on("inventory:updated", render, "analytics");
   }
 
   // =========================================
@@ -421,15 +406,11 @@ ModuleLoader.register("analytics", function () {
   // =========================================
   function cleanup() {
 
-    Bus.clearModule(
-      "analytics"
-    );
-
+    Bus.clearModule("analytics");
     container.innerHTML = "";
   }
 
   return {
-
     mount,
     cleanup
   };

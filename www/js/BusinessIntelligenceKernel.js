@@ -1,54 +1,80 @@
 // ======================================================
 // BusinessIntelligenceKernel.js
 // KANINI REAL-TIME BUSINESS INTELLIGENCE LAYER (RBIL)
-// v1 CORE KERNEL
+// v2 CORE ENGINE (CACHED + TREND AWARE)
 // ======================================================
 
 const BusinessIntelligenceKernel = (() => {
 
+  // ===============================
+  // KERNEL CONTRACTS (DO NOT CHANGE)
+  // ===============================
   const State = () => window.StateKernel;
   const Records = () => window.RecordsKernel;
   const Finance = () => window.FinanceKernel;
 
   const DAY = 86400000;
 
+  // ===============================
+  // SAFE NUMBER NORMALIZER
+  // ===============================
   const n = (v) => {
     const num = Number(v);
     return Number.isFinite(num) ? num : 0;
   };
 
+  // ===============================
+  // DEEP CLONE (SAFE SNAPSHOT)
+  // ===============================
   function clone(data) {
     return JSON.parse(JSON.stringify(data));
   }
 
+  // ===============================
+  // INTERNAL CACHE LAYER
+  // ===============================
+  let _cache = {
+    snapshot: null,
+    snapshotTime: 0,
+    aggregation: null,
+    aggregationTime: 0
+  };
+
+  const CACHE_TTL = 2000; // 2s BI cycle window
+
   // ======================================================
-  // SNAPSHOT
+  // SNAPSHOT (CACHED)
   // ======================================================
   function snapshot() {
 
-    return {
+    const now = Date.now();
 
-      products:
-        clone(
-          State()?.getProducts?.() || []
-        ),
+    if (_cache.snapshot && (now - _cache.snapshotTime) < CACHE_TTL) {
+      return _cache.snapshot;
+    }
 
-      sales:
-        clone(
-          Records()?.getSales?.() || []
-        ),
-
-      movements:
-        clone(
-          Records()?.getInventoryMovements?.() || []
-        )
+    const data = {
+      products: clone(State()?.getProducts?.() || []),
+      sales: clone(Records()?.getSales?.() || []),
+      movements: clone(Records()?.getInventoryMovements?.() || [])
     };
+
+    _cache.snapshot = data;
+    _cache.snapshotTime = now;
+
+    return data;
   }
 
   // ======================================================
-  // PRODUCT AGGREGATOR
+  // PRODUCT AGGREGATION (CACHED)
   // ======================================================
   function aggregateProducts() {
+
+    const now = Date.now();
+
+    if (_cache.aggregation && (now - _cache.aggregationTime) < CACHE_TTL) {
+      return _cache.aggregation;
+    }
 
     const { sales } = snapshot();
 
@@ -56,63 +82,46 @@ const BusinessIntelligenceKernel = (() => {
 
     sales.forEach(sale => {
 
+      const ts = n(sale.timestamp) || Date.now();
+
       (sale.items || []).forEach(item => {
 
         const id = item.productId;
+        if (!id) return;
 
         if (!map[id]) {
-
           map[id] = {
-
-            productId: item.productId,
-            name: item.name,
+            productId: id,
+            name: item.name || "Unknown",
 
             quantitySold: 0,
             revenue: 0,
             profit: 0,
-
             transactions: 0,
 
-            firstSold:
-              sale.timestamp,
-
-            lastSold:
-              sale.timestamp
+            firstSold: ts,
+            lastSold: ts
           };
         }
 
-        map[id].quantitySold +=
-          n(item.qty);
+        const entry = map[id];
 
-        map[id].revenue +=
-          n(item.subtotal);
+        entry.quantitySold += n(item.qty);
+        entry.revenue += n(item.subtotal);
+        entry.profit += n(item.profit);
+        entry.transactions += 1;
 
-        map[id].profit +=
-          n(item.profit);
-
-        map[id].transactions += 1;
-
-        if (
-          sale.timestamp >
-          map[id].lastSold
-        ) {
-          map[id].lastSold =
-            sale.timestamp;
-        }
-
-        if (
-          sale.timestamp <
-          map[id].firstSold
-        ) {
-          map[id].firstSold =
-            sale.timestamp;
-        }
-
+        if (ts > entry.lastSold) entry.lastSold = ts;
+        if (ts < entry.firstSold) entry.firstSold = ts;
       });
-
     });
 
-    return Object.values(map);
+    const result = Object.values(map);
+
+    _cache.aggregation = result;
+    _cache.aggregationTime = now;
+
+    return result;
   }
 
   // ======================================================
@@ -120,13 +129,11 @@ const BusinessIntelligenceKernel = (() => {
   // ======================================================
   function getProductMap() {
 
-    const { products } =
-      snapshot();
-
+    const { products } = snapshot();
     const map = {};
 
-    products.forEach(product => {
-      map[product.id] = product;
+    products.forEach(p => {
+      map[p.id] = p;
     });
 
     return map;
@@ -137,100 +144,52 @@ const BusinessIntelligenceKernel = (() => {
   // ======================================================
   function getExecutiveSummary() {
 
+    const finance = Finance();
     const { sales } = snapshot();
 
     return {
+      revenue: finance.getRevenue(),
+      profit: finance.getProfit(),
+      inventoryValue: finance.getInventoryValue(),
+      potentialProfit: finance.getPotentialProfit(),
 
-      revenue:
-        Finance().getRevenue(),
+      transactions: sales.length,
+      itemsSold: finance.getItemsSold(),
 
-      profit:
-        Finance().getProfit(),
+      averageSale: finance.getAverageOrderValue(),
 
-      inventoryValue:
-        Finance().getInventoryValue(),
-
-      potentialProfit:
-        Finance().getPotentialProfit(),
-
-      transactions:
-        sales.length,
-
-      itemsSold:
-        Finance().getItemsSold(),
-
-      averageSale:
-        Finance().getAverageOrderValue(),
-
-      healthScore:
-        Finance().getHealthScore(),
-
-      momentumScore:
-        Finance().getMomentumScore()
+      healthScore: finance.getHealthScore(),
+      momentumScore: finance.getMomentumScore()
     };
   }
 
   // ======================================================
-  // FAST MOVERS
+  // FAST / SLOW MOVERS
   // ======================================================
   function getFastMovers(limit = 10) {
-
     return aggregateProducts()
-
-      .sort(
-        (a, b) =>
-          b.quantitySold -
-          a.quantitySold
-      )
-
+      .sort((a, b) => b.quantitySold - a.quantitySold)
       .slice(0, limit);
   }
 
-  // ======================================================
-  // SLOW MOVERS
-  // ======================================================
   function getSlowMovers(limit = 10) {
-
     return aggregateProducts()
-
-      .sort(
-        (a, b) =>
-          a.quantitySold -
-          b.quantitySold
-      )
-
+      .sort((a, b) => a.quantitySold - b.quantitySold)
       .slice(0, limit);
   }
 
   // ======================================================
-  // TOP PROFIT
+  // TOP PROFIT / REVENUE
   // ======================================================
   function getTopProfitProducts(limit = 10) {
-
     return aggregateProducts()
-
-      .sort(
-        (a, b) =>
-          b.profit -
-          a.profit
-      )
-
+      .sort((a, b) => b.profit - a.profit)
       .slice(0, limit);
   }
 
-  // ======================================================
-  // TOP REVENUE
-  // ======================================================
   function getTopRevenueProducts(limit = 10) {
-
     return aggregateProducts()
-
-      .sort(
-        (a, b) =>
-          b.revenue -
-          a.revenue
-      )
-
+      .sort((a, b) => b.revenue - a.revenue)
       .slice(0, limit);
   }
 
@@ -239,33 +198,16 @@ const BusinessIntelligenceKernel = (() => {
   // ======================================================
   function getInventoryExposure() {
 
-    const { products } =
-      snapshot();
+    const { products } = snapshot();
 
     return products
-
-      .map(product => ({
-
-        id:
-          product.id,
-
-        name:
-          product.name,
-
-        stock:
-          n(product.stock),
-
-        value:
-          n(product.stock) *
-          n(product.buyingPrice)
-
+      .map(p => ({
+        id: p.id,
+        name: p.name,
+        stock: n(p.stock),
+        value: n(p.stock) * n(p.buyingPrice)
       }))
-
-      .sort(
-        (a, b) =>
-          b.value -
-          a.value
-      );
+      .sort((a, b) => b.value - a.value);
   }
 
   // ======================================================
@@ -274,46 +216,24 @@ const BusinessIntelligenceKernel = (() => {
   function getSalesVelocity() {
 
     return aggregateProducts()
-
-      .map(product => {
+      .map(p => {
 
         const daysActive = Math.max(
           1,
-          Math.ceil(
-            (
-              product.lastSold -
-              product.firstSold
-            ) / DAY
-          )
+          (p.lastSold - p.firstSold) / DAY || 1
         );
 
         return {
+          productId: p.productId,
+          name: p.name,
+          quantitySold: p.quantitySold,
 
-          productId:
-            product.productId,
-
-          name:
-            product.name,
-
-          quantitySold:
-            product.quantitySold,
-
-          averageDailySales:
-            Number(
-              (
-                product.quantitySold /
-                daysActive
-              ).toFixed(2)
-            )
+          averageDailySales: Number(
+            (p.quantitySold / daysActive).toFixed(2)
+          )
         };
-
       })
-
-      .sort(
-        (a, b) =>
-          b.averageDailySales -
-          a.averageDailySales
-      );
+      .sort((a, b) => b.averageDailySales - a.averageDailySales);
   }
 
   // ======================================================
@@ -321,41 +241,27 @@ const BusinessIntelligenceKernel = (() => {
   // ======================================================
   function getDeadStock(days = 30) {
 
-    const { products } =
-      snapshot();
+    const { products } = snapshot();
+    const salesData = aggregateProducts();
 
-    const salesData =
-      aggregateProducts();
+    const map = {};
+    salesData.forEach(p => map[p.productId] = p);
 
-    const salesMap = {};
+    const cutoff = Date.now() - (days * DAY);
 
-    salesData.forEach(product => {
+    return products.filter(p => {
 
-      salesMap[
-        product.productId
-      ] = product;
-    });
+      const sold = map[p.id];
 
-    const cutoff =
-      Date.now() -
-      (days * DAY);
-
-    return products.filter(product => {
-
-      const sold =
-        salesMap[product.id];
-
-      if (!sold) {
-        return true;
+      const createdAt = n(p.createdAt) || 0;
+      if (createdAt && (Date.now() - createdAt) < days * DAY) {
+        return false;
       }
 
-      return (
-        sold.lastSold <
-        cutoff
-      );
+      if (!sold) return true;
 
+      return sold.lastSold < cutoff;
     });
-
   }
 
   // ======================================================
@@ -363,125 +269,72 @@ const BusinessIntelligenceKernel = (() => {
   // ======================================================
   function getReorderRecommendations() {
 
-    const products =
-      getProductMap();
+    const products = getProductMap();
 
     return getSalesVelocity()
-
       .map(item => {
 
-        const product =
-          products[item.productId];
-
-        const stock =
-          n(product?.stock);
-
-        const velocity =
-          n(item.averageDailySales);
+        const p = products[item.productId];
+        const stock = n(p?.stock);
+        const velocity = n(item.averageDailySales);
 
         const daysRemaining =
-          velocity > 0
-            ? stock / velocity
-            : 9999;
+          velocity > 0 ? stock / velocity : 9999;
 
         return {
-
-          productId:
-            item.productId,
-
-          name:
-            item.name,
-
+          productId: item.productId,
+          name: item.name,
           stock,
-
-          averageDailySales:
-            velocity,
-
-          daysRemaining:
-            Number(
-              daysRemaining.toFixed(1)
-            )
-
+          averageDailySales: velocity,
+          daysRemaining: Number(daysRemaining.toFixed(1))
         };
-
       })
-
-      .sort(
-        (a, b) =>
-          a.daysRemaining -
-          b.daysRemaining
-      );
+      .sort((a, b) => a.daysRemaining - b.daysRemaining);
   }
 
   // ======================================================
-  // ALERTS
+  // OPERATIONAL ALERTS (DEDUPED)
   // ======================================================
   function getOperationalAlerts() {
 
     const alerts = [];
+    const seen = new Set();
+    const finance = Finance();
 
-    const lowStock =
-      Finance().getLowStock(5);
+    const push = (alert) => {
+      const key = alert.productId + ":" + alert.message;
+      if (seen.has(key)) return;
+      seen.add(key);
+      alerts.push(alert);
+    };
 
-    lowStock.forEach(product => {
-
-      alerts.push({
-
-        level:
-          n(product.stock) <= 2
-            ? "critical"
-            : "warning",
-
-        productId:
-          product.id,
-
-        message:
-          `${product.name} stock is low (${product.stock})`
+    finance.getLowStock(5).forEach(p => {
+      push({
+        level: n(p.stock) <= 2 ? "critical" : "warning",
+        productId: p.id,
+        message: `${p.name} stock is low (${p.stock})`
       });
-
     });
 
-    getDeadStock(30)
-      .forEach(product => {
-
-        alerts.push({
-
-          level:
-            "notice",
-
-          productId:
-            product.id,
-
-          message:
-            `${product.name} has not sold recently`
-        });
-
+    getDeadStock(30).forEach(p => {
+      push({
+        level: "notice",
+        productId: p.id,
+        message: `${p.name} has not sold recently`
       });
+    });
 
     getReorderRecommendations()
-
       .slice(0, 5)
-
       .forEach(item => {
 
-        if (
-          item.daysRemaining <= 2
-        ) {
-
-          alerts.push({
-
-            level:
-              "critical",
-
-            productId:
-              item.productId,
-
-            message:
-              `${item.name} may run out in ${item.daysRemaining} days`
+        if (item.daysRemaining <= 2) {
+          push({
+            level: "critical",
+            productId: item.productId,
+            message: `${item.name} may run out in ${item.daysRemaining} days`
           });
-
         }
-
       });
 
     return alerts;
@@ -492,119 +345,125 @@ const BusinessIntelligenceKernel = (() => {
   // ======================================================
   function getBusinessPulse() {
 
-    const health =
-      Finance().getHealthScore();
+    const finance = Finance();
+    const health = finance.getHealthScore();
+    const momentum = finance.getMomentumScore();
+    const alerts = getOperationalAlerts();
 
-    const momentum =
-      Finance().getMomentumScore();
+    const score = Math.round((health + momentum) / 2);
 
-    const alerts =
-      getOperationalAlerts();
-
-    const score =
-      Math.round(
-        (health + momentum) / 2
-      );
-
-    let status =
-      "Critical";
-
-    if (score >= 90)
-      status = "Elite";
-
-    else if (score >= 75)
-      status = "Healthy";
-
-    else if (score >= 60)
-      status = "Stable";
-
-    else if (score >= 40)
-      status = "Weak";
+    let status = "Critical";
+    if (score >= 90) status = "Elite";
+    else if (score >= 75) status = "Healthy";
+    else if (score >= 60) status = "Stable";
+    else if (score >= 40) status = "Weak";
 
     return {
-
       score,
-
       status,
-
-      alerts:
-        alerts.length,
-
+      alerts: alerts.length,
       health,
-
       momentum
     };
   }
 
   // ======================================================
-  // INSIGHTS
+  // 📊 DAILY COMPARISON ENGINE (NEW)
+  // ======================================================
+  function getDailyComparison() {
+
+    const { sales } = snapshot();
+
+    const today = new Date();
+    const startToday = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+    const startYesterday = startToday - DAY;
+
+    let todayRevenue = 0;
+    let yesterdayRevenue = 0;
+
+    let todayProfit = 0;
+    let yesterdayProfit = 0;
+
+    sales.forEach(sale => {
+
+      const ts = n(sale.timestamp);
+
+      (sale.items || []).forEach(item => {
+
+        if (ts >= startToday) {
+          todayRevenue += n(item.subtotal);
+          todayProfit += n(item.profit);
+        }
+
+        else if (ts >= startYesterday && ts < startToday) {
+          yesterdayRevenue += n(item.subtotal);
+          yesterdayProfit += n(item.profit);
+        }
+
+      });
+    });
+
+    const revenueGrowth =
+      yesterdayRevenue > 0
+        ? ((todayRevenue - yesterdayRevenue) / yesterdayRevenue) * 100
+        : 100;
+
+    const profitGrowth =
+      yesterdayProfit > 0
+        ? ((todayProfit - yesterdayProfit) / yesterdayProfit) * 100
+        : 100;
+
+    return {
+      today: { revenue: todayRevenue, profit: todayProfit },
+      yesterday: { revenue: yesterdayRevenue, profit: yesterdayProfit },
+
+      growth: {
+        revenue: Number(revenueGrowth.toFixed(2)),
+        profit: Number(profitGrowth.toFixed(2))
+      }
+    };
+  }
+
+  // ======================================================
+  // INSIGHTS ENGINE
   // ======================================================
   function generateInsights() {
 
     const insights = [];
 
-    const topRevenue =
-      getTopRevenueProducts(1)[0];
-
-    const topProfit =
-      getTopProfitProducts(1)[0];
+    const topRevenue = getTopRevenueProducts(1)[0];
+    const topProfit = getTopProfitProducts(1)[0];
+    const deadStock = getDeadStock(30);
 
     if (topRevenue) {
-
       insights.push({
-
-        type:
-          "positive",
-
-        title:
-          "Top Revenue Product",
-
-        message:
-          `${topRevenue.name} generated the highest revenue.`
+        type: "positive",
+        title: "Top Revenue Product",
+        message: `${topRevenue.name} generated the highest revenue.`
       });
-
     }
 
     if (topProfit) {
-
       insights.push({
-
-        type:
-          "positive",
-
-        title:
-          "Top Profit Product",
-
-        message:
-          `${topProfit.name} generated the highest profit.`
+        type: "positive",
+        title: "Top Profit Product",
+        message: `${topProfit.name} generated the highest profit.`
       });
-
     }
 
-    const deadStock =
-      getDeadStock(30);
-
     if (deadStock.length) {
-
       insights.push({
-
-        type:
-          "warning",
-
-        title:
-          "Dead Stock",
-
-        message:
-          `${deadStock.length} products have not sold recently.`
+        type: "warning",
+        title: "Dead Stock",
+        message: `${deadStock.length} products have not sold recently.`
       });
-
     }
 
     return insights;
   }
 
   // ======================================================
-  // PUBLIC API
+  // PUBLIC API (UNCHANGED CONTRACT)
   // ======================================================
   return {
 
@@ -628,7 +487,10 @@ const BusinessIntelligenceKernel = (() => {
 
     getBusinessPulse,
 
-    generateInsights
+    generateInsights,
+
+    // NEW ADDITION (SAFE EXTENSION)
+    getDailyComparison
   };
 
 })();
