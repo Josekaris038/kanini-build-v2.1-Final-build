@@ -1,75 +1,113 @@
-// ===== FinanceKernel.js (KANINI BUSINESS INTELLIGENCE ENGINE v5 FIXED SAFE) =====
+// ===== FinanceKernel.js (KANINI BUSINESS INTELLIGENCE ENGINE v5 FIXED SAFE + RBIL PATCH) =====
 
 const FinanceKernel = (() => {
 
-  // ===============================
-  // STATE ACCESS (READ ONLY)
-  // ===============================
   const State = () => window.StateKernel;
 
   if (!window.StateKernel) {
     throw new Error("[FinanceKernel] Missing StateKernel");
   }
 
-  // ===============================
-  // SAFE NUMBER
-  // ===============================
   const n = (v) => {
     const num = Number(v);
     return Number.isFinite(num) ? num : 0;
   };
 
-  // ===============================
-  // SNAPSHOT (SAFE + CONSISTENT)
-  // ===============================
+  // ======================================================
+  // SNAPSHOT (FIXED: SAFE FALLBACK + BI COMPATIBILITY)
+  // ======================================================
   function snapshot() {
-    const s = State().snapshot();
+    const s = State().snapshot?.() || {};
 
     return {
-      products: s?.inventory?.products || [],
+      products: s?.inventory?.products || s?.products || [],
       sales: s?.sales || [],
       movements: s?.movements || []
     };
   }
 
-  // ===============================
-  // TIME UTIL
-  // ===============================
   const now = () => Date.now();
   const DAY = 86400000;
 
   const withinDays = (ts, d) =>
     now() - (ts || 0) <= d * DAY;
 
-  // ===============================
+  // ======================================================
+  // INTERNAL: NORMALIZED SALES EXPANSION (CRITICAL FIX)
+  // Converts item-level BI format into safe totals fallback
+  // ======================================================
+  function expandSale(s) {
+
+    const items = s?.items || [];
+
+    let subtotal = 0;
+    let profit = 0;
+
+    for (const i of items) {
+      subtotal += n(i?.subtotal);
+      profit += n(i?.profit);
+    }
+
+    return {
+      subtotal: n(s?.totals?.subtotal || subtotal),
+      profit: n(s?.totals?.profit || profit),
+      timestamp: s?.timestamp
+    };
+  }
+
+  // ======================================================
   // CORE REVENUE
-  // ===============================
+  // ======================================================
   function getRevenue() {
 
     const { sales } = snapshot();
 
     return sales.reduce(
-      (sum, s) => sum + n(s?.totals?.subtotal),
+      (sum, s) => sum + expandSale(s).subtotal,
       0
     );
   }
 
-  // ===============================
+  // ======================================================
   // PROFIT
-  // ===============================
+  // ======================================================
   function getProfit() {
 
     const { sales } = snapshot();
 
     return sales.reduce(
-      (sum, s) => sum + n(s?.totals?.profit),
+      (sum, s) => sum + expandSale(s).profit,
       0
     );
   }
 
-  // ===============================
+  // ======================================================
+  // TIME-BASED REVENUE (NEW - REQUIRED FOR BIK PHASE 1)
+  // ======================================================
+  function getRevenueByDays(days = 7) {
+
+    const { sales } = snapshot();
+
+    return sales
+      .filter(s => withinDays(s?.timestamp, days))
+      .reduce((sum, s) => sum + expandSale(s).subtotal, 0);
+  }
+
+  // ======================================================
+  // TIME-BASED PROFIT (NEW - REQUIRED FOR BIK PHASE 1)
+  // ======================================================
+  function getProfitByDays(days = 7) {
+
+    const { sales } = snapshot();
+
+    return sales
+      .filter(s => withinDays(s?.timestamp, days))
+      .reduce((sum, s) => sum + expandSale(s).profit, 0);
+  }
+
+  // ======================================================
   // ITEMS SOLD
-  // ===============================
+  // ======================================================
   function getItemsSold() {
 
     const { sales } = snapshot();
@@ -82,21 +120,20 @@ const FinanceKernel = (() => {
     }, 0);
   }
 
-  // ===============================
+  // ======================================================
   // AVERAGE ORDER VALUE
-  // ===============================
+  // ======================================================
   function getAverageOrderValue() {
 
     const { sales } = snapshot();
-
     if (!sales.length) return 0;
 
     return getRevenue() / sales.length;
   }
 
-  // ===============================
+  // ======================================================
   // INVENTORY VALUE
-  // ===============================
+  // ======================================================
   function getInventoryValue() {
 
     const { products } = snapshot();
@@ -108,9 +145,9 @@ const FinanceKernel = (() => {
     );
   }
 
-  // ===============================
+  // ======================================================
   // POTENTIAL PROFIT
-  // ===============================
+  // ======================================================
   function getPotentialProfit() {
 
     const { products } = snapshot();
@@ -124,9 +161,9 @@ const FinanceKernel = (() => {
     );
   }
 
-  // ===============================
+  // ======================================================
   // REVENUE TREND
-  // ===============================
+  // ======================================================
   function getRevenueTrend(days = 7) {
 
     const { sales } = snapshot();
@@ -144,36 +181,24 @@ const FinanceKernel = (() => {
         .split("T")[0];
 
       buckets[d] ||= 0;
-      buckets[d] += n(s?.totals?.subtotal);
+      buckets[d] += expandSale(s).subtotal;
     }
 
     return buckets;
   }
 
-  // ===============================
+  // ======================================================
   // PROFIT VELOCITY
-  // ===============================
+  // ======================================================
   function getProfitVelocity(days = 7) {
 
-    const { sales } = snapshot();
-
-    const filtered = sales.filter(s =>
-      withinDays(s?.timestamp, days)
-    );
-
-    if (!filtered.length) return 0;
-
-    const total = filtered.reduce(
-      (sum, s) => sum + n(s?.totals?.profit),
-      0
-    );
-
+    const total = getProfitByDays(days);
     return total / days;
   }
 
-  // ===============================
+  // ======================================================
   // STOCK TURNOVER
-  // ===============================
+  // ======================================================
   function getStockTurnover() {
 
     const { movements } = snapshot();
@@ -183,9 +208,9 @@ const FinanceKernel = (() => {
     ).length;
   }
 
-  // ===============================
+  // ======================================================
   // MOMENTUM SCORE
-  // ===============================
+  // ======================================================
   function getMomentumScore() {
 
     const revenue = getRevenue();
@@ -203,9 +228,9 @@ const FinanceKernel = (() => {
     return Math.max(0, Math.min(100, score));
   }
 
-  // ===============================
+  // ======================================================
   // HEALTH SCORE
-  // ===============================
+  // ======================================================
   function getHealthScore() {
 
     const inventory = getInventoryValue();
@@ -224,9 +249,9 @@ const FinanceKernel = (() => {
     return Math.round(Math.max(0, Math.min(100, score)));
   }
 
-  // ===============================
+  // ======================================================
   // LOW STOCK
-  // ===============================
+  // ======================================================
   function getLowStock(threshold = 5) {
 
     const { products } = snapshot();
@@ -236,9 +261,9 @@ const FinanceKernel = (() => {
     );
   }
 
-  // ===============================
+  // ======================================================
   // FINAL REPORT
-  // ===============================
+  // ======================================================
   function exportReport() {
 
     return {
@@ -258,8 +283,14 @@ const FinanceKernel = (() => {
   }
 
   return {
+
     getRevenue,
     getProfit,
+
+    // PHASE 1 COMPATIBILITY (CRITICAL FOR BIK)
+    getRevenueByDays,
+    getProfitByDays,
+
     getItemsSold,
     getAverageOrderValue,
 
@@ -281,3 +312,4 @@ const FinanceKernel = (() => {
 })();
 
 window.FinanceKernel = FinanceKernel;
+
