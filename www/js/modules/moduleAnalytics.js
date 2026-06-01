@@ -1,11 +1,12 @@
 // ======================================================
-// moduleAnalytics.js (KANINI BI DASHBOARD v4 — EXECUTIVE EXPERIENCE LAYER)
-// Fully synchronized with BusinessIntelligenceKernel (BIK)
+// moduleAnalytics.js (KANINI BI DASHBOARD v5 — EXECUTIVE EXPERIENCE LAYER)
+// Finance-aware realignment with TODAY metrics integration
 // ======================================================
 
 ModuleLoader.register("analytics", function () {
 
   const BIK = window.BusinessIntelligenceKernel;
+  const Finance = window.FinanceKernel;
   const Bus = window.EventKernel;
 
   const container = document.getElementById("moduleContainer");
@@ -18,7 +19,7 @@ ModuleLoader.register("analytics", function () {
   const percent = v => `${(v || 0).toFixed(1)}%`;
 
   // =========================
-  // CARD UI (UNCHANGED STRUCTURE, ENHANCED SEMANTIC VALUE)
+  // CARD UI
   // =========================
   function card(label, value, sub = "") {
     return `
@@ -42,7 +43,21 @@ ModuleLoader.register("analytics", function () {
   };
 
   // =========================
-  // EXECUTIVE NARRATIVE ENGINE (UPGRADED CORE)
+  // TODAY METRICS (NEW ADDITION)
+  // =========================
+  function getTodayMetrics() {
+
+    const todayRevenue = safe(() => Finance.getRevenueByDays(1), 0);
+    const todayProfit = safe(() => Finance.getProfitByDays(1), 0);
+
+    return {
+      revenue: todayRevenue,
+      profit: todayProfit
+    };
+  }
+
+  // =========================
+  // EXECUTIVE NARRATIVE ENGINE (UNCHANGED TONE)
   // =========================
   function buildNarrative() {
 
@@ -59,9 +74,6 @@ ModuleLoader.register("analytics", function () {
     const revGrowth = comparison?.growth?.revenue ?? 0;
     const profGrowth = comparison?.growth?.profit ?? 0;
 
-    // =========================
-    // BUSINESS STORY (NOT REPORTING)
-    // =========================
     if (revGrowth > 0) {
       lines.push(`Business is expanding. Revenue is up ${revGrowth.toFixed(1)}%, driven by stronger customer demand and higher transaction flow.`);
     } else if (revGrowth < 0) {
@@ -71,46 +83,31 @@ ModuleLoader.register("analytics", function () {
     }
 
     if (profGrowth > 0) {
-      lines.push(`Profitability strengthened by ${profGrowth.toFixed(1)}%, suggesting improved margins and healthier product mix.`);
+      lines.push(`Profitability strengthened by ${profGrowth.toFixed(1)}%, suggesting improved profit generation and healthier product mix.`);
     } else if (profGrowth < 0) {
-      lines.push(`Profit pressure detected. Margins weakened by ${Math.abs(profGrowth).toFixed(1)}%, likely due to cost or pricing imbalance.`);
+      lines.push(`Profit pressure detected. Profit weakened by ${Math.abs(profGrowth).toFixed(1)}%, likely due to cost or pricing imbalance.`);
     }
 
-    // =========================
-    // DRIVERS (WHY IT HAPPENED)
-    // =========================
     if (topRev) {
       lines.push(`Primary revenue engine today: ${topRev.name}. This product is anchoring overall sales performance.`);
     }
 
     if (topProf) {
-      lines.push(`Highest value contributor: ${topProf.name}. This is your strongest margin generator.`);
+      lines.push(`Highest value contributor: ${topProf.name}. This is your strongest profit generator.`);
     }
 
-    // =========================
-    // BUSINESS STATE (SIMPLIFIED HUMAN READ)
-    // =========================
     if (pulse?.status) {
       lines.push(`Business condition: ${pulse.status}. Operational health score sits at ${pulse.score}, indicating current system stability.`);
     }
 
-    // =========================
-    // CAPITAL AWARENESS (NOT ACCOUNTING — STRATEGIC VIEW)
-    // =========================
     if (summary?.inventoryValue) {
-      lines.push(`Inventory represents locked capital of ${money(summary.inventoryValue)}. This reflects resources currently tied in stock rather than cash flow.`);
+      lines.push(`Inventory represents locked capital of ${money(summary.inventoryValue)}. This reflects resources currently tied in stock.`);
     }
 
-    // =========================
-    // CAPITAL STAGNATION SIGNAL
-    // =========================
     if (dead.length > 0) {
       lines.push(`${dead.length} products show no recent movement. This indicates potential capital stagnation and slow-moving inventory risk.`);
     }
 
-    // =========================
-    // FUTURE OUTLOOK (OWNER HOOK)
-    // =========================
     if (forecast?.length) {
       const end = forecast[forecast.length - 1];
       lines.push(`Forward outlook suggests revenue trajectory could reach approximately ${money(end.revenue)} within the next 7 days under current conditions.`);
@@ -120,7 +117,7 @@ ModuleLoader.register("analytics", function () {
   }
 
   // =========================
-  // HOURLY RENDER (UNCHANGED LOGIC)
+  // HOURLY RENDER
   // =========================
   function renderHourly(hourly) {
 
@@ -143,13 +140,12 @@ ModuleLoader.register("analytics", function () {
   }
 
   // =========================
-  // MAIN RENDER (STRUCTURE PRESERVED, EXPERIENCE UPGRADED)
+  // MAIN RENDER
   // =========================
   function render() {
 
     const summary = safe(() => BIK.getExecutiveSummary(), {});
     const pulse = safe(() => BIK.getBusinessPulse(), {});
-    const comparison = safe(() => BIK.getDailyComparison(), {});
     const hourly = safe(() => BIK.getHourlyPerformance(), []);
     const insights = safe(() => BIK.generateInsights(), []);
     const reorder = safe(() => BIK.getReorderRecommendations(), []);
@@ -159,26 +155,31 @@ ModuleLoader.register("analytics", function () {
     const capitalRisk = safe(() => BIK.getCapitalLockRisk(), []);
     const narrative = buildNarrative();
 
+    const today = getTodayMetrics();
+
     container.innerHTML = `
       <div class="analytics">
 
-        <!-- HERO (UPGRADED PRESENCE) -->
+        <!-- HERO -->
         <div class="hero">
           <h1>Executive Intelligence Layer</h1>
           <p>Live business state • decision-grade insights • operational awareness</p>
         </div>
 
-        <!-- KPI STRIP (MEANING-AWARE) -->
+        <!-- KPI STRIP -->
         <div class="grid">
-          ${card("Revenue", money(summary.revenue), "Total inflow generated")}
-          ${card("Profit", money(summary.profit), "Net business outcome")}
+
+          ${card("Today Revenue", money(today.revenue), "Revenue generated today")}
+          ${card("Today Profit", money(today.profit), "Profit generated today")}
+
           ${card("Inventory Value", money(summary.inventoryValue), "Capital currently held in stock")}
           ${card("Potential Profit", money(summary.potentialProfit), "If all stock is optimally sold")}
+
           ${card("Transactions", summary.transactions, "Customer activity count")}
           ${card("Avg Sale", money(summary.averageSale), "Average transaction size")}
         </div>
 
-        <!-- BUSINESS PULSE (MADE MORE ALIVE) -->
+        <!-- BUSINESS PULSE -->
         <div class="pulse">
           <div class="score">${pulse.score}</div>
           <div class="status">
@@ -186,7 +187,7 @@ ModuleLoader.register("analytics", function () {
           </div>
         </div>
 
-        <!-- NARRATIVE ENGINE -->
+        <!-- NARRATIVE -->
         <div class="section-title">Executive Narrative</div>
         <div class="panel">
           ${narrative.map(n => `<div class="line">${n}</div>`).join("")}
@@ -226,7 +227,7 @@ ModuleLoader.register("analytics", function () {
           }
         </div>
 
-        <!-- INVENTORY EXPOSURE -->
+        <!-- INVENTORY -->
         <div class="section-title">Inventory Exposure</div>
         <div class="panel">
           ${exposure.slice(0, 5).map(p => `
@@ -274,9 +275,6 @@ ModuleLoader.register("analytics", function () {
     `;
   }
 
-  // =========================
-  // LIFECYCLE (UNCHANGED)
-  // =========================
   function mount() {
     render();
     Bus.on("sales:updated", render, "analytics");
